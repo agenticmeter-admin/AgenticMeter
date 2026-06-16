@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+*.zip
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# AgenticMeter traces (local SQLite DB)
+.agenticmeter/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Secrets — never commit API keys
+.env
+*.env

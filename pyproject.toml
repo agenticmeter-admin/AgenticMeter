@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agenticmeter"
+version = "0.1.0"
+description = "Agent-centric, local-first observability: understand what your AI agents do, not just trace them."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Abhay Pratap Singh" }]
+license = { text = "MIT" }
+keywords = ["agents", "observability", "llm", "tracing", "openai", "anthropic", "langchain"]
+dependencies = []   # zero-dependency core; instrument modules are no-ops if a lib is absent
+
+[project.optional-dependencies]
+openai = ["openai>=1.0"]
+anthropic = ["anthropic>=0.30"]
+langchain = ["langchain-core>=0.2"]
+
+[project.scripts]
+agenticmeter = "agenticmeter.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["agenticmeter*"]
