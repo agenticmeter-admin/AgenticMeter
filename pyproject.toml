@@ -3,8 +3,8 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agenticmeter"
-version = "0.1.0"
+name = "agenticmeter-cli"
+version = "0.2.0"
 description = "Agent-centric, local-first observability: understand what your AI agents do, not just trace them."
 readme = "README.md"
 requires-python = ">=3.10"
