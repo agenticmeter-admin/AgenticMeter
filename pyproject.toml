@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Agent-centric, local-first observability: understand what your AI agents do, not just trace them."
 readme = "README.md"
 requires-python = ">=3.10"
-authors = [{ name = "Abhay Pratap Singh" }]
+authors = [{ name = "Abhaypratap Singh" }]
 license = { text = "MIT" }
 keywords = ["agents", "observability", "llm", "tracing", "openai", "anthropic", "langchain"]
 dependencies = []   # zero-dependency core; instrument modules are no-ops if a lib is absent
