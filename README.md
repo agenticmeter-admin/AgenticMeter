@@ -1,109 +1,123 @@
-# agenticmeter — capture layer (prototype)
+# AgenticMeter
 
-Agent-centric, local-first observability. Wrap your agent; get a trace tree of
-every step, tool call, and loop with token + cost usage.
+**Find the bugs that waste money in your agent runs.**
 
-## Quick start
+AgenticMeter is a linter for AI agent runs. Wrap your agent, run it, and get told
+what went wrong and what it cost: tool loops, duplicate LLM calls, context bloat,
+failures your agent quietly swallowed. You don't have to dig through a trace to find them.
+
+It runs locally. Traces stay in a SQLite file on your machine, there is no account
+or cloud service, and the core has zero dependencies.
+
+## Try it in 10 seconds
+
+```bash
+pip install agenticmeter-cli
+agenticmeter demo
+```
+
+`demo` runs a simulated travel agent (no API keys, no network) with the bugs real
+agents ship with:
+
+```
+▸ travel_agent — 11 steps · 28.2k tok · $0.0739 · 0.7s
+
+⚠ One step = 69% of this run's cost
+    'openai.chat' cost $0.0510 of $0.0739 total.
+    → optimize or cache that single call before anything else.
+
+⚠ Tool failed 1x but the run succeeded anyway
+    fetch_hotel_prices errored mid-run; the agent recovered, so nothing surfaced.
+    → check whether the recovery path is actually correct, not just quiet.
+
+⚠ Context grew 1,200 → 18,000 tokens
+    prompt size grew 15.0x across 5 calls (~$0.0420 of re-sent history on that call)
+    → trim or summarize history between steps to stop the quadratic creep.
+
+⚠ Same tool called 4x with identical args
+    'search_flights' ran 4 times with the same input — likely a loop or a missing cache.
+    → add a cache, or fix the condition that re-calls it.
+...
+```
+
+Every warning links to the exact spans that prove it. Nothing is guessed.
+
+## Lint your own agent
+
 ```python
 import agenticmeter as am
-sink = am.configure()          # scrub redaction on, auto-patches OpenAI/Anthropic/LangChain
 
-@am.meter                      # wrap the run
-def agent(task):
-    with am.span("plan", am.SpanType.LLM):
-        ...
-    return do_work(task)
+am.configure(sink="sqlite")   # persist runs to ~/.agenticmeter/traces.db
 
-agent("plan my launch week")
-
-# inspect the trace tree
-root, children = sink.tree(sink.spans[0].trace_id)
-```
-
-## What's implemented
-- `context.py`   — contextvars spine (current run/span) + `bind_worker` for threads
-- `tracer.py`    — start/end spans, build tree, **fail-open**, route to sink
-- `span.py`      — OTel-shaped Span + SpanType
-- `redact.py`    — scrub secrets + truncate (on by default)
-- `cost.py`      — per-model token→$ price map (override with `am.cost.set_prices`)
-- `decorators.py`— `@meter`, `with meter.span(...)`, `@meter.tool`
-- `instrument/openai.py`     — sync + async + streaming, enrich-not-duplicate
-- `instrument/anthropic.py`  — sync + async
-- `instrument/langchain.py`  — callback handler, run_id tree, global register
-- `sinks/base.py`            — Sink interface + MemorySink (+ tree builder)
-
-## Capture surfaces & the double-counting rule
-LLM call usage is captured by SDK patching. When a framework (LangChain) already
-opened an LLM span, the SDK patch **enriches that span** with exact token usage
-instead of emitting a duplicate — driven by `context.in_framework_llm`.
-
-## Not yet built (next steps)
-- SQLite sink + background async flush queue (`flush.py`)
-- `agenticmeter ui` local viewer
-- loop / cycle detection (`analysis/loops.py`)
-- cloud exporter
-
-## Run the tests
-```bash
-python3 smoke_test.py
-```
-
-## Behavior layer (the product)
-`analysis/insights.py` — six pure detectors over the span tree, each returning
-Insights with evidence (span ids) + an action. Assert-only-what-you-can-prove:
-
-| code | tier | fires when |
-|------|------|-----------|
-| silent_tool_failures | fact | a tool errored but the run returned ok |
-| cost_concentration   | fact | one step >= 60% of run cost (>= 3 priced steps) |
-| repeated_llm_calls   | fact | identical prompt billed >= 2x |
-| context_growth       | fact | peak prompt >= 3x first (and >= 2k extra tokens) |
-| repeated_tool_calls  | pattern | same tool + same args >= 3x (the provable "loop") |
-| time_concentration   | fact | >= 70% of step time in retrieval/tool/custom |
-
-```python
-from agenticmeter.analysis.insights import analyze, format_insights
-print(format_insights(analyze(spans)))   # spans = one trace's span list
-```
-
-Run the demo / tests:
-```bash
-python3 behavior_demo.py     # messy run -> all six warnings
-python3 behavior_test.py     # messy fires all six, clean fires none
-```
-
-## Seeing the output (Level 0 + 1)
-Level 0 — every `@meter` run prints its behavior summary when it closes (warnings
-only by default, so clean runs stay silent):
-```python
-import agenticmeter as am
-am.configure(sink="sqlite", summary="auto")   # "auto" | True | False
+@am.tool
+def search(query): ...
 
 @am.meter
-def agent(task): ...
-agent("...")     # -> prints ▸ run header + any ⚠ warnings to stderr
+def agent(task):
+    ...
+
+agent("plan my launch week")  # warnings print to stderr when the run ends
 ```
 
-Level 1 — runs persist to ~/.agenticmeter/traces.db; replay them from the terminal:
+OpenAI, Anthropic and LangChain calls are captured automatically when those
+libraries are installed, with tokens and cost per call. For anything else, mark
+steps by hand:
+
+```python
+with am.span("retrieve", am.SpanType.RETRIEVAL):
+    ...
+```
+
+Clean runs stay silent. Pass `summary=True` to always print, or `summary=False` to never print.
+
+## What it catches
+
+| Check | Fires when |
+|---|---|
+| Silent tool failure | a tool errored but the run reported success |
+| Cost concentration | one step is ≥ 60% of the run's cost (across ≥ 3 priced steps) |
+| Duplicate LLM calls | the identical prompt was paid for ≥ 2 times |
+| Context bloat | the prompt grew ≥ 3x and by ≥ 2k tokens over the run |
+| Tool loop | the same tool was called ≥ 3 times with identical arguments |
+| Time bottleneck | ≥ 70% of step time went to retrieval, tools or custom code |
+
+Thresholds live in `agenticmeter.analysis.insights.Config`. Very short runs
+(fewer than two steps, or under 50ms of work) don't trigger the time check.
+
+## Look back at runs
+
 ```bash
-agenticmeter runs            # list recent runs (or: python -m agenticmeter runs)
+agenticmeter runs            # recent runs: steps, tokens, cost
 agenticmeter show            # latest run: trace tree + warnings
-agenticmeter show <id>       # a specific run (prefix ok)
+agenticmeter show <id>       # a specific run (id prefix is fine)
+agenticmeter ui              # local web viewer at http://127.0.0.1:4319
+agenticmeter demo --save     # keep the demo run so you can explore it in `show` / `ui`
 ```
 
-Try it: `python3 level01_demo.py`, then `python3 -m agenticmeter --db /tmp/agenticmeter_demo.db show`.
+In the viewer, clicking a warning highlights the steps that caused it.
 
-## Install (editable)
+## Design rules
+
+- **Zero-dependency core.** Integrations are optional extras:
+  `pip install "agenticmeter-cli[openai,anthropic,langchain]"`.
+- **Local-first.** No telemetry, no network calls. Your traces never leave your machine.
+- **Fail open.** If AgenticMeter hits an internal error, it drops the span and logs
+  once. It never crashes or slows your agent.
+- **Secrets scrubbed by default.** Inputs and outputs are redacted before they
+  are stored (`redact="scrub"`; also `"truncate"`, `"off"` or your own function).
+- **Prices are configurable.** Override or add models with `am.cost.set_prices({...})`.
+
+## Install notes
+
+The PyPI package is `agenticmeter-cli`. The import name and command are both
+`agenticmeter`. Requires Python 3.10+.
+
+## Development
+
 ```bash
-pip install -e .             # registers the `agenticmeter` command
+pip install -e ".[openai,anthropic]"
+python smoke_test.py       # capture layer
+python behavior_test.py    # detectors: messy run fires all, clean and trivial runs fire none
 ```
-This also avoids the import-shadowing trap: run from anywhere, edits picked up live.
 
-## Local web viewer (Level 2)
-```bash
-agenticmeter ui              # opens http://127.0.0.1:4319 in your browser
-agenticmeter ui --port 8080 --no-open
-```
-Single page: live-polling run list (left), selected run's behavior findings + trace
-tree (right). Click any ⚠ finding and it highlights + scrolls to the offending
-steps in the trace — diagnosis you can verify in one click. Stdlib only, no deps.
+See [CONTRIBUTING.md](CONTRIBUTING.md). MIT licensed.
