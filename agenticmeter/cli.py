@@ -3,6 +3,7 @@
     agenticmeter runs              list recent runs
     agenticmeter show [trace_id]   show a run's trace tree + behavior warnings
                                    (defaults to the most recent run)
+    agenticmeter demo              run a simulated buggy agent and lint it
 """
 from __future__ import annotations
 
@@ -51,12 +52,25 @@ def cmd_show(sink, args):
                 spans = sink.get_trace(r["trace_id"]); break
     if not spans:
         print(f"No run found for '{trace_id}'."); return
+    _print_run(spans)
 
+
+def cmd_demo(args):
+    from . import demo
+    from .sinks.base import MemorySink
+    sink = SQLiteSink(args.db) if args.save else MemorySink()
+    print("Running a simulated travel agent (no API calls)...\n")
+    _print_run(demo.run(sink))
+    if args.save:
+        print("Saved. Explore it with `agenticmeter show` or `agenticmeter ui`.")
+    print("Lint your own agent: wrap it with @agenticmeter.meter — see the README.")
+
+
+def _print_run(spans):
     print(run_header(spans) + "\n")
     _print_tree(spans)
     print()
-    insights = analyze(spans)
-    print(format_insights(insights))
+    print(format_insights(analyze(spans)))
 
 
 def _print_tree(spans):
@@ -101,6 +115,9 @@ def main(argv=None):
     ps = sub.add_parser("show", help="show a run's trace + warnings")
     ps.add_argument("trace_id", nargs="?", default=None)
 
+    pd = sub.add_parser("demo", help="run a simulated buggy agent and lint it")
+    pd.add_argument("--save", action="store_true", help="persist the run to the traces db")
+
     pu = sub.add_parser("ui", help="open the local web viewer")
     pu.add_argument("-p", "--port", type=int, default=4319)
     pu.add_argument("--no-open", action="store_true", help="don't auto-open the browser")
@@ -110,6 +127,9 @@ def main(argv=None):
     if args.cmd == "ui":
         from .server import serve
         serve(db_path=args.db, port=args.port, open_browser=not args.no_open)
+        return
+    if args.cmd == "demo":
+        cmd_demo(args)
         return
 
     sink = SQLiteSink(args.db)
