@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agenticmeter-cli"
-version = "0.2.0"
-description = "Agent-centric, local-first observability: understand what your AI agents do, not just trace them."
+version = "0.2.1"
+description = "A linter for AI agent runs: find the bugs that waste money. Local-first, zero dependencies."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Abhaypratap Singh" }]

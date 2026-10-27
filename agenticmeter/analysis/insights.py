@@ -44,6 +44,7 @@ class Config:
     repeat_tool: int = 3            # same tool+args called >= 3x
     repeat_llm: int = 2             # identical llm call >= 2x
     time_share: float = 0.70        # >= 70% of self-time in one span type
+    time_min_ms: float = 50.0       # ...and only when steps took real time
     ctx_growth: float = 3.0         # final prompt >= 3x the first
     ctx_min_delta: int = 2000       # ...and at least this many extra tokens
     min_steps: int = 2              # ignore trivially short runs
@@ -146,7 +147,10 @@ def time_concentration(spans, cfg):
         by_type[s.type] += self_t[s.span_id]
         ids_by_type[s.type].append(s.span_id)
         total += self_t[s.span_id]
-    if total <= 0 or not by_type:
+    steps = sum(1 for s in spans if s.parent_id is not None)
+    # a "bottleneck" needs something to compare against: enough steps, more
+    # than one kind of work, and measurable time
+    if steps < cfg.min_steps or len(by_type) < 2 or total * 1000 < cfg.time_min_ms:
         return []
     # LLM/agent dominating wall time is expected and not actionable; only flag
     # when non-LLM work (retrieval, tools, custom) is the bottleneck.

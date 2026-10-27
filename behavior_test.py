@@ -60,4 +60,26 @@ print("clean run insights:", [i.code for i in clean_ins])
 assert clean_ins == [], "clean run should produce no warnings"
 print("clean run: zero false alarms ✅")
 
+# ---- trivial runs: one or two steps should trip NOTHING ----------------
+def trivial(*steps):
+    T = "t3"
+    root = mk(SpanType.AGENT, "agent", T, 0, 0.002, parent=None); root.status = "ok"
+    return [root] + [mk(t, n, T, 0.0, 0.001, input={"i": k})
+                     for k, (t, n) in enumerate(steps)]
+
+for case in [trivial((SpanType.TOOL, "lookup")),
+             trivial((SpanType.TOOL, "lookup"), (SpanType.TOOL, "lookup")),
+             trivial((SpanType.CUSTOM, "work")),
+             trivial((SpanType.RETRIEVAL, "search"), (SpanType.LLM, "chat"))]:
+    got = [i.code for i in analyze(case)]
+    assert got == [], f"trivial run should produce no warnings, got {got}"
+print("trivial runs: zero false alarms ✅")
+
+# ---- `agenticmeter demo` must keep showing every detector --------------
+from agenticmeter import demo
+from agenticmeter.sinks.base import MemorySink
+demo_codes = {i.code for i in analyze(demo.run(MemorySink()))}
+assert demo_codes == expected, f"demo fired {sorted(demo_codes)}"
+print("demo run: all six fired ✅")
+
 print("\nALL BEHAVIOR CHECKS PASSED ✅")
